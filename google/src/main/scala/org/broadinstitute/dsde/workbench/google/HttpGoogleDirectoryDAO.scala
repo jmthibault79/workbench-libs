@@ -68,14 +68,19 @@ class HttpGoogleDirectoryDAO(appName: String,
   }
 
   override def deleteGroup(groupEmail: WorkbenchEmail): Future[Unit] = {
-    val groups = directory.groups
-    val deleter = groups.delete(groupEmail.value)
+    listGroupMembers(groupEmail).flatMap {
+      case Some(users) => Future.traverse(users) { user => removeMemberFromGroup(groupEmail, WorkbenchEmail(user)) }
+      case None => Future.successful()
+    } flatMap { _ =>
+      val groups = directory.groups
+      val deleter = groups.delete(groupEmail.value)
 
-    retryWithRecoverWhen500orGoogleError(() => {
-      executeGoogleRequest(deleter)
-      ()
-    }) {
-      case e: HttpResponseException if e.getStatusCode == StatusCodes.NotFound.intValue => () // if the group is already gone, don't fail
+      retryWithRecoverWhen500orGoogleError(() => {
+        executeGoogleRequest(deleter)
+        ()
+      }) {
+        case e: HttpResponseException if e.getStatusCode == StatusCodes.NotFound.intValue => () // if the group is already gone, don't fail
+      }
     }
   }
 
